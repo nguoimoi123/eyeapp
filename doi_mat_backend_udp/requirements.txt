@@ -1,0 +1,5 @@
+# backend_udp/requirements.txt
+torch
+torchvision
+Pillow
+numpy

@@ -155,7 +155,7 @@ VOC_CLASSES = [
 ]
 
 # --- 4. Video setup ---
-video_path = "../video_test/1.mp4"
+video_path = "../video_test/6.mp4"
 cap = cv2.VideoCapture(video_path)
 if not cap.isOpened():
     print(f"Không thể mở video tại: {video_path}")
@@ -171,13 +171,13 @@ unique_objects = {}
 frame_count = 0
 confidence_threshold = 0.5
 
-output_path = "../video_test/output_tracked_video_improved5.mp4"
+output_path = "../video_test/output_tracked_video_improved6.mp4"
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
 # --- 5. Xử lý video ---
 frame_count = 0
-frame_skip = 3  # xử lý mỗi 3 frame
+frame_skip = 1  # xử lý mỗi frame
 
 while True:
     ret, frame = cap.read()
@@ -243,7 +243,7 @@ print("\n--- Tổng kết kết quả ---")
 all_objects = {**tracker.objects, **tracker.lost_objects}
 
 # Lọc đối tượng xuất hiện quá ngắn
-min_duration = 3  # giây
+min_duration = 1  # giây
 min_frames = fps * min_duration
 
 filtered_objects = {

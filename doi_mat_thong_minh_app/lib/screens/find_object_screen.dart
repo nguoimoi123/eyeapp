@@ -1,12 +1,26 @@
 // lib/screens/find_object_screen.dart
+//
+// Mô tả:
+//  - Màn hình này mở camera, lấy frame liên tục (camera image stream), chuyển mỗi frame
+//    sang JPEG bytes và gửi qua UDP đến server (ApiService.sendRawFrame).
+//  - Thiết kế để dễ tích hợp vào các dự án demo / prototyping nơi server xử lý ảnh (ví dụ: Python).
+//
+// Lưu ý về hiệu năng & mạng:
+//  - UDP không reliable; có thể mất frame. Nếu cần reliability, xem hướng dẫn chuyển sang TCP / chunking.
+//  - Để giảm băng thông & tránh fragmentation, chúng ta gửi 1 frame/5 frame và nén JPEG quality ~80.
+//  - Nếu gặp lỗi decode trên server -> giảm quality hoặc độ phân giải.
+
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:io';
+import 'package:image/image.dart' as img;
+
 import '../services/api_service.dart';
-import 'object_details_screen.dart';
+import '../services/api_udp_service.dart';
 
 class FindObjectScreen extends StatefulWidget {
   const FindObjectScreen({super.key});
@@ -17,20 +31,15 @@ class FindObjectScreen extends StatefulWidget {
 
 class _FindObjectScreenState extends State<FindObjectScreen>
     with WidgetsBindingObserver {
-  CameraController? _controller;
-  List<CameraDescription> _cameras = [];
-  bool _isCameraInitialized = false;
+  CameraController? _controller; // Controller camera chính
+  List<CameraDescription> _cameras = []; // Danh sách camera có trên thiết bị
+  bool _isCameraInitialized = false; // Cờ đã init camera thành công chưa
+  bool _isTakingPicture = false; // Đồng bộ tránh gửi nhiều request cùng lúc
+  bool _isStreaming = false; // Đang ở chế độ stream frame từ camera
+  int _frameCount = 0; // Đếm frame đã lấy (dùng để throttle)
 
-  bool _isScanning = true;
-  // THAY ĐỔI 1: Lưu danh sách các vật thể thay vì chỉ một
-  List<Map<String, dynamic>> _detectedObjects = [];
-  Timer? _detectionTimer;
-  bool _isTakingPicture = false;
-
-  // THAY ĐỔI 2: Thêm biến để lưu vật thể đang được chọn
-  String? _selectedObjectLabel;
-
-  final ApiService _apiService = ApiService();
+  final ApiUdpService _apiService =
+      ApiUdpService(); // Service UDP (đã định nghĩa ở lib/services)
 
   @override
   void initState() {
@@ -42,148 +51,171 @@ class _FindObjectScreenState extends State<FindObjectScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // Giải phóng tài nguyên camera khi thoát màn hình
     _controller?.dispose();
-    _detectionTimer?.cancel();
     super.dispose();
   }
 
+  /// Khởi tạo camera: request permission, lấy camera back, init controller
   Future<void> _initializeCamera() async {
+    // Yêu cầu quyền camera (nếu chưa có)
     await Permission.camera.request();
+
+    // Lấy danh sách camera có sẵn trên thiết bị
     _cameras = await availableCameras();
     if (_cameras.isEmpty) return;
 
-    final firstCamera = _cameras.firstWhere(
-      (camera) => camera.lensDirection == CameraLensDirection.back,
+    // Chọn camera sau (back) ưu tiên
+    final backCamera = _cameras.firstWhere(
+      (c) => c.lensDirection == CameraLensDirection.back,
       orElse: () => _cameras.first,
     );
 
+    // Tạo controller với ResolutionPreset.medium (đủ rõ & tiết kiệm băng thông)
     _controller = CameraController(
-      firstCamera,
-      ResolutionPreset.high,
+      backCamera,
+      ResolutionPreset.medium,
       enableAudio: false,
     );
 
+    // Khởi tạo controller (async)
     await _controller!.initialize();
+
+    // Tắt flash (mặc định)
     await _controller!.setFlashMode(FlashMode.off);
+
+    // Khi đã sẵn sàng, cập nhật UI và bắt đầu stream frame
     if (mounted) {
       setState(() {
         _isCameraInitialized = true;
       });
-      _startRealTimeDetection();
+      _startFrameStream();
     }
   }
 
-  // THAY ĐỔI 3: Cập nhật logic để xử lý tất cả các vật thể
-  void _startRealTimeDetection() {
-    const duration = Duration(seconds: 5);
-    _detectionTimer = Timer.periodic(duration, (timer) async {
-      if (!mounted ||
-          _controller == null ||
-          !_controller!.value.isInitialized) {
-        timer.cancel();
-        return;
-      }
+  // 🔹 Bắt đầu stream frame camera và gửi qua UDP (ApiService.sendRawFrame)
+  //
+  // Thiết kế:
+  //  - stopImageStream() trước khi start để đảm bảo không có luồng cũ
+  //  - dùng `_frameCount % 5 == 0` để gửi 1/5 frame (throttle)
+  //  - `_isTakingPicture` để tránh race condition / gửi nhiều frame cùng 1 lúc
+  void _startFrameStream() async {
+    if (_isStreaming) return;
+    if (_controller == null || !_controller!.value.isInitialized) return;
 
+    _isStreaming = true;
+    _frameCount = 0;
+
+    // Nếu trước đó đang stream, dừng để tránh lỗi
+    await _controller!.stopImageStream().catchError((_) {});
+
+    print(" Bắt đầu lấy frame từ camera...");
+    // startImageStream cung cấp CameraImage (YUV420) liên tục
+    _controller!.startImageStream((CameraImage image) async {
+      // Nếu đang trong quá trình gửi frame hoặc xử lý, bỏ qua
       if (_isTakingPicture) return;
-
       _isTakingPicture = true;
+
       try {
-        final image = await _controller!.takePicture();
-        final responseData = await _apiService.predictImage(File(image.path));
+        _frameCount++;
 
-        if (responseData['objects'] != null &&
-            responseData['objects'].isNotEmpty) {
-          // Xử lý tất cả các vật thể trả về
-          final List<Map<String, dynamic>> detected = [];
-          for (var obj in responseData['objects']) {
-            detected.add({
-              'label': obj['label'],
-              'box': Rect.fromLTRB(
-                obj['box'][0].toDouble(),
-                obj['box'][1].toDouble(),
-                obj['box'][2].toDouble(),
-                obj['box'][3].toDouble(),
-              ),
-              'icon': _getIconForLabel(obj['label']),
-              'color': Colors.cyan,
-            });
-          }
-
-          if (mounted) {
-            setState(() {
-              _isScanning = false;
-              _detectedObjects = detected; // Lưu danh sách
-            });
-            timer.cancel(); // Dừng quét sau khi đã xử lý xong
-          }
+        // GỬI 1 FRAME = mỗi 5 frame (bạn có thể điều chỉnh frame skip để tăng/giảm băng thông)
+        // Ví dụ: nếu camera chạy ~30 FPS, skip 5 -> ~6 FPS; tuy nhiên encode+send thực tế còn chậm hơn.
+        if (_frameCount % 5 != 0) {
+          _isTakingPicture = false;
+          return;
         }
+
+        // --- 1️⃣ Chuyển CameraImage (YUV420) sang JPEG bytes ---
+        // Vì camera trả YUV, chúng ta cần convert sang RGB để encode JPEG.
+        final jpegBytes = await _convertCameraImageToJpeg(image);
+
+        // --- 2️⃣ Gửi JPEG bytes qua UDP ---
+        // ApiService.sendRawFrame chỉ gửi bytes qua UDP tới server đã cấu hình.
+        await _api_service_send(jpegBytes);
+
+        print("📤 Đã gửi frame #$_frameCount (${jpegBytes.length} bytes)");
       } catch (e) {
-        print("Lỗi khi gửi ảnh đến server: $e");
+        // debug print (trong production, dùng logging)
+        print("❌ Lỗi xử lý frame: $e");
       } finally {
         _isTakingPicture = false;
       }
     });
   }
 
-  IconData _getIconForLabel(String label) {
-    switch (label.toLowerCase()) {
-      case 'aeroplane':
-        return Icons.flight;
-      case 'bicycle':
-        return Icons.pedal_bike;
-      case 'bird':
-        return Icons.flutter_dash;
-      case 'boat':
-        return Icons.directions_boat;
-      case 'bottle':
-        return Icons.local_drink;
-      case 'bus':
-        return Icons.airport_shuttle;
-      case 'car':
-        return Icons.directions_car;
-      case 'cat':
-        return Icons.pets;
-      case 'chair':
-        return Icons.chair;
-      case 'cow':
-        return Icons.agriculture;
-      case 'diningtable':
-        return Icons.table_restaurant;
-      case 'dog':
-        return Icons.pets;
-      case 'horse':
-        return Icons.directions_run;
-      case 'motorbike':
-        return Icons.motorcycle;
-      case 'person':
-        return Icons.person;
-      case 'pottedplant':
-        return Icons.local_florist;
-      case 'sheep':
-        return Icons.cruelty_free;
-      case 'sofa':
-        return Icons.chair_alt;
-      case 'train':
-        return Icons.train;
-      case 'tvmonitor':
-        return Icons.tv;
-      default:
-        return Icons.help_outline;
+  // Wrapper gọi service để tách dependency, dễ unit-test
+  Future<void> _api_service_send(Uint8List jpegBytes) async {
+    try {
+      await _apiService.sendRawFrame(jpegBytes);
+    } catch (e) {
+      print("Lỗi khi gửi frame qua ApiService: $e");
     }
   }
 
-  // THAY ĐỔI 4: Cập nhật hàm reset để xóa danh sách và lựa chọn
-  void _resetScanning() {
-    setState(() {
-      _isScanning = true;
-      _detectedObjects = [];
-      _selectedObjectLabel = null;
-    });
-    _startRealTimeDetection();
+  // 🔹 Chuyển CameraImage (YUV420) → JPEG Uint8List
+  //  - Convert YUV -> RGB bằng thuật toán cơ bản
+  //  - Encode RGB -> JPEG bằng package `image`
+  Future<Uint8List> _convertCameraImageToJpeg(CameraImage image) async {
+    try {
+      // Convert YUV -> RGB (trả về image.Image từ package:image)
+      final imgRgb = await _convertYUV420toImageColor(image);
+
+      // Encode sang JPEG (quality có thể điều chỉnh để giảm payload)
+      final jpg = img.encodeJpg(imgRgb, quality: 80);
+
+      // Trả về Uint8List (dễ gửi qua socket)
+      return Uint8List.fromList(jpg);
+    } catch (e) {
+      print("Lỗi khi chuyển frame sang JPEG: $e");
+      rethrow;
+    }
+  }
+
+  // 🔹 Convert YUV420 (CameraImage) -> RGB (package:image.Image)
+  // Giải thích:
+  //  - CameraImage.planes: [Y, U, V] theo chuẩn YUV420
+  //  - uvPixelStride và uvRowStride dùng để index U/V tương ứng pixel (subsample 2x2)
+  //  - Công thức chuyển đổi YUV -> RGB ở đây là dạng xấp xỉ (đủ cho hiển thị)
+  Future<img.Image> _convertYUV420toImageColor(CameraImage image) async {
+    final width = image.width;
+    final height = image.height;
+    final uvRowStride = image.planes[1].bytesPerRow;
+    final uvPixelStride = image.planes[1].bytesPerPixel ?? 1;
+
+    final img.Image imgRgb = img.Image(width: width, height: height);
+
+    final yPlane = image.planes[0].bytes;
+    final uPlane = image.planes[1].bytes;
+    final vPlane = image.planes[2].bytes;
+
+    // Lặp qua mọi pixel để tính RGB
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        final int uvIndex = uvPixelStride * (x ~/ 2) + uvRowStride * (y ~/ 2);
+
+        // Lấy giá trị Y/U/V (lưu ý indexing theo bytesPerRow)
+        final int yp = yPlane[y * image.planes[0].bytesPerRow + x];
+        final int up = uPlane[uvIndex];
+        final int vp = vPlane[uvIndex];
+
+        // Công thức chuyển đổi (đã scale & trừ offset)
+        int r = (yp + vp * 1436 / 1024 - 179).clamp(0, 255).toInt();
+        int g = (yp - up * 46549 / 131072 + 44 - vp * 93604 / 131072 + 91)
+            .clamp(0, 255)
+            .toInt();
+        int b = (yp + up * 1814 / 1024 - 227).clamp(0, 255).toInt();
+
+        imgRgb.setPixelRgb(x, y, r, g, b);
+      }
+    }
+
+    return imgRgb;
   }
 
   @override
   Widget build(BuildContext context) {
+    // Nếu camera chưa init xong, hiển thị loading
     if (!_isCameraInitialized) {
       return const Scaffold(
         backgroundColor: Colors.black,
@@ -191,153 +223,39 @@ class _FindObjectScreenState extends State<FindObjectScreen>
       );
     }
 
+    // Giao diện chính: preview camera + status + nút back
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
-        fit: StackFit.expand,
         children: [
+          // Hiển thị preview trực tiếp từ camera
           CameraPreview(_controller!),
-          if (!_isScanning && _detectedObjects.isNotEmpty)
-            _buildDetectedObjectsUI(context),
+
+          // Thông báo trạng thái ở dưới
+          Positioned(
+            bottom: 50,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Text(
+                "Đang gửi frame UDP...",
+                style: GoogleFonts.plusJakartaSans(
+                  color: Colors.cyanAccent,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+
+          // Nút back góc trái trên
           _buildBackButton(context),
-          // THAY ĐỔI 5: Thêm nút "Tìm hiểu thêm" chung cho màn hình
-          if (!_isScanning && _selectedObjectLabel != null)
-            _buildLearnMoreButton(context),
         ],
       ),
     );
   }
 
-  // THAY ĐỔI 6: Vẽ tất cả các hộp và cho phép chạm để chọn
-  Widget _buildDetectedObjectsUI(BuildContext context) {
-    final previewSize = _controller!.value.previewSize!;
-    final screenSize = MediaQuery.of(context).size;
-    // Lấy hướng của thiết bị
-    final orientation = MediaQuery.of(context).orientation;
-
-    double scaleX = screenSize.width / previewSize.height;
-    double scaleY = screenSize.height / previewSize.width;
-
-    // Hệ số thu nhỏ chiều cao khi ở chế độ ngang. Bạn có thể điều chỉnh giá trị này.
-    const double landscapeHeightScale = 0.8;
-
-    return Stack(
-      children: _detectedObjects.map((obj) {
-        final box = obj['box'] as Rect;
-        final label = obj['label'] as String;
-        final icon = obj['icon'] as IconData;
-        final color = obj['color'] as Color;
-
-        // Đổi màu nếu vật thể được chọn
-        final finalColor = (_selectedObjectLabel == label)
-            ? Colors.yellow
-            : color;
-
-        final double left = box.left * scaleX;
-        final double top = box.top * scaleY;
-        double width = (box.width) * scaleX;
-        double height = (box.height) * scaleY;
-
-        // === ĐIỀU KIỆN ĐẶC BIỆT ===
-        // Kiểm tra xem thiết bị có đang ở chế độ ngang không
-        // VÀ hộp có phải là hộp dọc (chiều cao lớn hơn chiều rộng) không
-        if (orientation == Orientation.landscape && height > width) {
-          // Nếu đúng, thu nhỏ chiều cao của hộp lại
-          height = height * landscapeHeightScale;
-          // (Tùy chọn) Dịch chuyển hộp lên một chút để nó không bị lệch về dưới sau khi thu nhỏ
-          // top = top - (box.height * scaleY * (1 - landscapeHeightScale) / 2);
-        }
-
-        return Positioned(
-          left: left,
-          top: top,
-          child: GestureDetector(
-            onTap: () {
-              // Cập nhật vật thể được chọn khi chạm vào
-              setState(() {
-                _selectedObjectLabel = label;
-              });
-            },
-            child: Container(
-              width: width,
-              height: height, // Sử dụng chiều cao đã được điều chỉnh
-              decoration: BoxDecoration(
-                border: Border.all(color: finalColor, width: 2.5),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned(
-                    top: -35,
-                    left: 0,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: finalColor,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(icon, color: Colors.white, size: 18),
-                          const SizedBox(width: 6),
-                          Text(
-                            label,
-                            style: GoogleFonts.plusJakartaSans(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  // THAY ĐỔI 7: Nút "Tìm hiểu thêm" được tách ra và nằm ở dưới màn hình
-  Widget _buildLearnMoreButton(BuildContext context) {
-    return Positioned(
-      bottom: 50,
-      left: 20,
-      right: 20,
-      child: ElevatedButton.icon(
-        onPressed: () {
-          if (_selectedObjectLabel != null) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) =>
-                    ObjectDetailsScreen(label: _selectedObjectLabel!),
-              ),
-            );
-          }
-        },
-        icon: const Icon(Icons.info_outline),
-        label: const Text('Tìm hiểu thêm'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.cyan,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-        ),
-      ),
-    );
-  }
-
+  // Nút back đơn giản
   Widget _buildBackButton(BuildContext context) {
     return Positioned(
       top: 50,
@@ -345,17 +263,11 @@ class _FindObjectScreenState extends State<FindObjectScreen>
       child: FloatingActionButton(
         mini: true,
         onPressed: () {
-          if (_isScanning) {
-            Navigator.pop(context);
-          } else {
-            _resetScanning();
-          }
+          // Khi quay lại, ta chỉ pop màn hình. Có thể mở rộng: dừng stream, v.v.
+          Navigator.pop(context);
         },
         backgroundColor: Colors.black.withOpacity(0.5),
-        child: Icon(
-          _isScanning ? Icons.arrow_back : Icons.refresh,
-          color: Colors.white,
-        ),
+        child: const Icon(Icons.arrow_back, color: Colors.white),
       ),
     );
   }
