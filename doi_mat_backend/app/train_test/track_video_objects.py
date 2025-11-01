@@ -155,7 +155,7 @@ VOC_CLASSES = [
 ]
 
 # --- 4. Video setup ---
-video_path = "../video_test/4.mp4"
+video_path = "../video_test/1.mp4"
 cap = cv2.VideoCapture(video_path)
 if not cap.isOpened():
     print(f"Không thể mở video tại: {video_path}")
@@ -171,21 +171,29 @@ unique_objects = {}
 frame_count = 0
 confidence_threshold = 0.5
 
-output_path = "../video_test/output_tracked_video_improved2.mp4"
+output_path = "../video_test/output_tracked_video_improved5.mp4"
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
 # --- 5. Xử lý video ---
+frame_count = 0
+frame_skip = 3  # xử lý mỗi 3 frame
+
 while True:
     ret, frame = cap.read()
     if not ret:
         break
 
     frame_count += 1
+
+    # Bỏ qua các frame không cần xử lý
+    if frame_count % frame_skip != 0:
+        continue
+
     print(f"Đang xử lý frame {frame_count}/{total_frames}")
 
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    img_tensor = ToTensor()(rgb_frame).unsqueeze(0)
+    img_tensor = ToTensor()(rgb_frame).unsqueeze(0).to('cpu')
 
     with torch.no_grad():
         predictions = model(img_tensor)
@@ -194,11 +202,17 @@ while True:
     scores = predictions[0]['scores']
     labels = predictions[0]['labels']
     keep = scores >= confidence_threshold
-    
-    detections = [(boxes[i].cpu().numpy(), labels[i].cpu().numpy(), scores[i].cpu().numpy())
-                  for i in range(len(boxes[keep]))]
+    boxes = boxes[keep]
+    scores = scores[keep]
+    labels = labels[keep]
+
+    detections = [
+        (boxes[i].cpu().numpy(), labels[i].item(), scores[i].item())
+        for i in range(len(boxes))
+    ]
 
     tracked_objects = tracker.update(detections, frame_count)
+
 
     for object_id, data in tracked_objects.items():
         box = data['box'].astype(int)
@@ -229,7 +243,7 @@ print("\n--- Tổng kết kết quả ---")
 all_objects = {**tracker.objects, **tracker.lost_objects}
 
 # Lọc đối tượng xuất hiện quá ngắn
-min_duration = 10  # giây
+min_duration = 3  # giây
 min_frames = fps * min_duration
 
 filtered_objects = {

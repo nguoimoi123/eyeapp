@@ -1,10 +1,13 @@
 // lib/screens/result_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'dart:io';
+import 'dart:ui' as ui;
 
-class ResultScreen extends StatelessWidget {
+// Chuyển từ StatelessWidget sang StatefulWidget
+class ResultScreen extends StatefulWidget {
   final File imageFile;
   final List<dynamic> predictions;
 
@@ -14,7 +17,39 @@ class ResultScreen extends StatelessWidget {
     required this.predictions,
   });
 
-  // HÀM MỚI: DỊCH TÊN VẬT THỂ SANG TIẾNG VIỆT ĐỂ MÔ TẢ TỰ NHIÊN HƠN
+  @override
+  State<ResultScreen> createState() => _ResultScreenState();
+}
+
+class _ResultScreenState extends State<ResultScreen> {
+  // Biến trạng thái để lưu kích thước ảnh
+  int? _imageWidth;
+  int? _imageHeight;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // Gọi hàm bất đồng bộ để lấy kích thước ảnh khi màn hình được khởi tạo
+    _getImageDimensions();
+  }
+
+  // Hàm bất đồng bộ để lấy kích thước thật của ảnh
+  Future<void> _getImageDimensions() async {
+    final Uint8List bytes = await widget.imageFile.readAsBytes();
+    final ui.Codec codec = await ui.instantiateImageCodec(bytes);
+    final ui.FrameInfo frameInfo = await codec.getNextFrame();
+    final ui.Image image = frameInfo.image;
+
+    // Cập nhật trạng thái với kích thước thật và tắt loading
+    setState(() {
+      _imageWidth = image.width;
+      _imageHeight = image.height;
+      _isLoading = false;
+    });
+  }
+
+  // HÀM DỊCH NHÃN ĐỐI TƯỢNG SANG TIẾNG VIỆT
   String _translateLabel(String englishLabel) {
     switch (englishLabel) {
       case 'person':
@@ -182,8 +217,37 @@ class ResultScreen extends StatelessWidget {
     }
   }
 
+  // ... (các phần khác của class _ResultScreenState giữ nguyên)
+
   @override
   Widget build(BuildContext context) {
+    // Hiển thị vòng tròn tải trong khi chờ lấy kích thước ảnh
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF6F6F8),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFFF6F6F8),
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Symbols.arrow_back, color: Colors.black54),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: Text(
+            'Kết quả',
+            style: GoogleFonts.plusJakartaSans(
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          centerTitle: true,
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // Kiểm tra xem ảnh có phải là ảnh ngang không
+    final isLandscapeImage = _imageWidth! > _imageHeight!;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF6F6F8),
       appBar: AppBar(
@@ -202,64 +266,163 @@ class ResultScreen extends StatelessWidget {
         ),
         centerTitle: true,
       ),
-      body: Column(
-        children: [
-          Expanded(
+      // === THAY ĐỔI CHÍNH: SỬ DỤNG ORIENTATIONBUILDER ===
+      body: OrientationBuilder(
+        builder: (context, orientation) {
+          // Nếu màn hình đang ở chế độ dọc
+          if (orientation == Orientation.portrait) {
+            return _buildPortraitLayout(isLandscapeImage);
+          }
+          // Nếu màn hình đang ở chế độ ngang
+          else {
+            return _buildLandscapeLayout();
+          }
+        },
+      ),
+    );
+  }
+
+  // Bố cục cho màn hình dọc (Column)
+  Widget _buildPortraitLayout(bool isLandscapeImage) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Nếu là ảnh ngang, cho nó chiếm 3/5 không gian
+        if (isLandscapeImage)
+          Flexible(
+            flex: 3,
             child: Padding(
               padding: const EdgeInsets.all(16.0),
-              child: _buildImageWithBoxes(context),
+              // === THAY ĐỔI: BỌC TRONG SINGLECHILDSCROLLVIEW ===
+              child: SingleChildScrollView(
+                child: _buildImageWithBoxes(context),
+              ),
+            ),
+          )
+        // Nếu là ảnh dọc, cho nó chiếm 4/5 không gian
+        else
+          Flexible(
+            flex: 4,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              // === THAY ĐỔI: BỌC TRONG SINGLECHILDSCROLLVIEW ===
+              child: SingleChildScrollView(
+                child: _buildImageWithBoxes(context),
+              ),
             ),
           ),
-          _buildBottomSection(context),
-        ],
-      ),
+        // Phần mô tả bên dưới (giữ nguyên)
+        Flexible(
+          flex: isLandscapeImage ? 2 : 1,
+          child: _buildBottomSection(context),
+        ),
+      ],
+    );
+  }
+
+  // Bố cục cho màn hình ngang (Row)
+  Widget _buildLandscapeLayout() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Ảnh chiếm 3/5 chiều rộng
+        Expanded(
+          flex: 3,
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            // === THAY ĐỔI: BỌC TRONG SINGLECHILDSCROLLVIEW ===
+            child: SingleChildScrollView(child: _buildImageWithBoxes(context)),
+          ),
+        ),
+        // Phần mô tả chiếm 2/5 chiều rộng (giữ nguyên)
+        Expanded(flex: 2, child: _buildBottomSection(context)),
+      ],
     );
   }
 
   Widget _buildImageWithBoxes(BuildContext context) {
+    // Tính toán tỷ lệ khung hình từ kích thước ảnh gốc
+    final double aspectRatio = _imageWidth! / _imageHeight!;
+    // Lấy hướng của thiết bị để truyền vào hàm vẽ hộp
+    final orientation = MediaQuery.of(context).orientation;
+
     return AspectRatio(
-      aspectRatio: 3 / 4,
-      child: Stack(
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: const BorderRadius.all(Radius.circular(12)),
-              image: DecorationImage(
-                image: FileImage(imageFile),
-                fit: BoxFit.cover,
+      aspectRatio: aspectRatio,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final double displayWidth = constraints.maxWidth;
+          final double displayHeight = constraints.maxHeight;
+
+          return Stack(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.all(Radius.circular(12)),
+                  image: DecorationImage(
+                    image: FileImage(widget.imageFile),
+                    fit: BoxFit.cover,
+                  ),
+                ),
               ),
-            ),
-          ),
-          ..._buildBoundingBoxes(context),
-        ],
+              // Truyền hướng vào hàm _buildBoundingBoxes
+              ..._buildBoundingBoxes(displayWidth, displayHeight, orientation),
+            ],
+          );
+        },
       ),
     );
   }
 
-  List<Widget> _buildBoundingBoxes(BuildContext context) {
-    const double originalImageWidth = 800.0;
-    final double displayWidth = MediaQuery.of(context).size.width * 0.9;
-    final double scale = displayWidth / originalImageWidth;
+  List<Widget> _buildBoundingBoxes(
+    double displayWidth,
+    double displayHeight,
+    Orientation orientation,
+  ) {
+    // Đảm bảo đã có kích thước ảnh gốc
+    if (_imageWidth == null || _imageHeight == null) {
+      return [];
+    }
+
+    // Tính toán tỷ lệ co giãn riêng cho trục X và Y
+    final double scaleX = displayWidth / _imageWidth!;
+    final double scaleY = displayHeight / _imageHeight!;
+
+    // Hệ số thu nhỏ chiều cao khi ở chế độ ngang với ảnh dọc
+    const double landscapeHeightScale = 0.8;
+
+    // === ĐIỀU KIỆN ĐẶC BIỆT ===
+    // Kiểm tra xem thiết bị có đang ở chế độ ngang VÀ ảnh có phải là ảnh dọc không
+    final bool shouldScaleBoxHeight =
+        (orientation == Orientation.landscape && _imageHeight! > _imageWidth!);
 
     List<Widget> boxes = [];
-    for (final prediction in predictions) {
+    for (final prediction in widget.predictions) {
       final box = (prediction['box'] as List)
           .map((e) => (e as num).toDouble())
           .toList();
       final label = prediction['label'] as String;
 
-      final left = box[0] * scale;
-      final top = box[1] * scale;
-      final width = (box[2] - box[0]) * scale;
-      final height = (box[3] - box[1]) * scale;
+      // Áp dụng tỷ lệ co giãn để tính toán vị trí và kích thước trên màn hình
+      final left = box[0] * scaleX;
+      double top = box[1] * scaleY; // Đặt 'top' là mutable để có thể điều chỉnh
+      final width = (box[2] - box[0]) * scaleX;
+      double height = (box[3] - box[1]) * scaleY; // Đặt 'height' là mutable
+
+      double finalHeight = height;
+      if (shouldScaleBoxHeight) {
+        // Nếu đúng điều kiện, thu nhỏ chiều cao của hộp lại
+        finalHeight = height * landscapeHeightScale;
+        // Dịch chuyển hộp lên một chút để nó được căn giữa trong vùng ban đầu
+        top = top + (height - finalHeight) / 2;
+      }
 
       boxes.add(
         Positioned(
           left: left,
-          top: top,
+          top: top, // Sử dụng vị trí 'top' đã điều chỉnh
           child: Container(
             width: width,
-            height: height,
+            height: finalHeight, // Sử dụng chiều cao đã điều chỉnh
             decoration: BoxDecoration(
               border: Border.all(color: Colors.cyan, width: 2),
               borderRadius: BorderRadius.circular(8),
@@ -281,7 +444,7 @@ class ResultScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      _translateLabel(label), // Dùng nhãn đã dịch
+                      _translateLabel(label),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 12,
@@ -299,13 +462,12 @@ class ResultScreen extends StatelessWidget {
     return boxes;
   }
 
-  // HÀM NÀY ĐƯỢC VIẾT HOÀN TOÀN LẠI
   Widget _buildBottomSection(BuildContext context) {
     String description = "Mình không thấy gì đặc biệt.";
-    if (predictions.isNotEmpty) {
+    if (widget.predictions.isNotEmpty) {
       // 1. Tạo một Map để đếm số lượng của mỗi nhãn
       final Map<String, int> labelCounts = {};
-      for (final prediction in predictions) {
+      for (final prediction in widget.predictions) {
         final label = (prediction as Map<String, dynamic>)['label'] as String;
         labelCounts[label] = (labelCounts[label] ?? 0) + 1;
       }
@@ -315,7 +477,6 @@ class ResultScreen extends StatelessWidget {
         final descriptionParts = <String>[];
         final labels = labelCounts.keys.toList();
 
-        // Xử lý tất cả các vật thể trừ vật thể cuối cùng
         for (int i = 0; i < labels.length - 1; i++) {
           final label = labels[i];
           final count = labelCounts[label]!;
@@ -323,7 +484,6 @@ class ResultScreen extends StatelessWidget {
           descriptionParts.add('$count $vietnameseLabel');
         }
 
-        // Xử lý vật thể cuối cùng
         final lastLabel = labels.last;
         final lastCount = labelCounts[lastLabel]!;
         final vietnameseLastLabel = _translateLabel(lastLabel);
@@ -334,7 +494,6 @@ class ResultScreen extends StatelessWidget {
           lastPart = '$lastCount $vietnameseLastLabel';
         }
 
-        // Ghép các phần lại với nhau
         if (descriptionParts.isEmpty) {
           description = "Trong ảnh này có $lastPart.";
         } else {
@@ -344,14 +503,15 @@ class ResultScreen extends StatelessWidget {
       }
     }
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SpeechBubble(text: description),
-        const SizedBox(height: 16),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Row(
+    return SingleChildScrollView(
+      // Thêm padding để nội dung không bị dính vào mép
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min, // Cho cột tự co lại theo nội dung
+        children: [
+          SpeechBubble(text: description),
+          const SizedBox(height: 16),
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _buildActionButton(
@@ -366,11 +526,8 @@ class ResultScreen extends StatelessWidget {
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 16),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: ElevatedButton.icon(
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
             onPressed: () {
               Navigator.pop(context);
               Navigator.pop(context);
@@ -389,9 +546,10 @@ class ResultScreen extends StatelessWidget {
               ),
             ),
           ),
-        ),
-        const SizedBox(height: 24),
-      ],
+          // Thêm khoảng trống ở dưới cùng
+          const SizedBox(height: 24),
+        ],
+      ),
     );
   }
 

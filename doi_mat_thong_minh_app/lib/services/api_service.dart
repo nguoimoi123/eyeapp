@@ -5,7 +5,7 @@ import 'dart:convert'; // Thêm thư viện này
 
 class ApiService {
   // THAY THẾ <YOUR_IP_ADDRESS> BẰNG ĐỊA CHỈ IP CỦA BẠN
-  static const String _baseUrl = "http://192.168.90.103:8000";
+  static const String _baseUrl = "http://192.168.0.155:8000";
 
   // Hàm gửi ảnh đến endpoint /describe
   Future<Map<String, dynamic>> describeImage(File imageFile) async {

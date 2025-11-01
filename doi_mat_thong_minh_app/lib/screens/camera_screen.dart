@@ -8,6 +8,7 @@ import 'package:image/image.dart' as img;
 import 'dart:io';
 import 'dart:typed_data';
 import 'loading_screen.dart';
+import 'package:exif/exif.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -102,13 +103,42 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  // Resize ảnh
+  // Resize ảnh và xử lý xoay theo EXIF
   Future<Uint8List> _resizeImage(String filePath) async {
     final File imageFile = File(filePath);
     final Uint8List imageBytes = await imageFile.readAsBytes();
+
+    // Giải mã ảnh để lấy dữ liệu gốc
     final img.Image? originalImage = img.decodeImage(imageBytes);
     if (originalImage == null) return imageBytes;
-    final img.Image resizedImage = img.copyResize(originalImage, width: 800);
+
+    // Đọc dữ liệu EXIF từ byte của ảnh
+    final exifData = await readExifFromBytes(imageBytes);
+    img.Image orientedImage = originalImage; // Bắt đầu với ảnh gốc
+
+    if (exifData != null && exifData.containsKey('Image Orientation')) {
+      // Lấy giá trị hướng từ EXIF
+      final orientationValue = exifData['Image Orientation']?.printable;
+
+      // Áp dụng xoay dựa trên hướng EXIF
+      switch (orientationValue) {
+        case '6': // Xoay 90 độ theo chiều kim đồng hồ
+          orientedImage = img.copyRotate(originalImage, angle: 90);
+          break;
+        case '8': // Xoay 90 độ ngược chiều kim đồng hồ
+          orientedImage = img.copyRotate(originalImage, angle: -90);
+          break;
+        case '3': // Xoay 180 độ
+          orientedImage = img.copyRotate(originalImage, angle: 180);
+          break;
+        // '1' là bình thường, không cần xoay
+      }
+    }
+
+    // Giờ thì resize ảnh đã được xoay đúng chiều
+    final img.Image resizedImage = img.copyResize(orientedImage, width: 800);
+
+    // Mã hóa và trả về. Ảnh mới sẽ có hướng mặc định (1).
     return Uint8List.fromList(img.encodeJpg(resizedImage, quality: 85));
   }
 
