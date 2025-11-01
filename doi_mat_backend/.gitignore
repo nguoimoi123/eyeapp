@@ -2,4 +2,3 @@ VOC2012/
 VOC2012/VOC2012/
 VOC2012.tar.gz
 __pycache__/
-*.pth
