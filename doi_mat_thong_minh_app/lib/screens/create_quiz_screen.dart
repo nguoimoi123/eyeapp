@@ -1,8 +1,9 @@
 // lib/screens/create_quiz_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
-import 'quiz_challenge_screen.dart'; // Chúng ta sẽ tạo file này sau
+import 'quiz_challenge_screen.dart'; // Import màn hình chính của quiz
 
 class CreateQuizScreen extends StatelessWidget {
   const CreateQuizScreen({super.key});
@@ -10,7 +11,7 @@ class CreateQuizScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF9F9FB), // background-light
+      backgroundColor: const Color(0xFFF9F9FB),
       appBar: AppBar(
         backgroundColor: const Color(0xFFF9F9FB),
         elevation: 0,
@@ -22,12 +23,11 @@ class CreateQuizScreen extends StatelessWidget {
           'Tạo Quiz Mới',
           style: GoogleFonts.plusJakartaSans(
             fontWeight: FontWeight.bold,
-            color: const Color(0xFF0D0D0D), // text-light-primary
+            color: const Color(0xFF0D0D0D),
           ),
         ),
         centerTitle: true,
       ),
-      // Dùng Column để căn giữa nội dung và đẩy nút xuống dưới
       body: Column(
         children: [
           // Phần nội dung chính
@@ -39,20 +39,20 @@ class CreateQuizScreen extends StatelessWidget {
                 Container(
                   width: 160,
                   height: 160,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEBF5FF), // secondary-blue
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFEBF5FF),
                     shape: BoxShape.circle,
                   ),
                   child: Container(
                     margin: const EdgeInsets.all(28),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF007AFF).withOpacity(0.2), // primary/20
+                      color: const Color(0xFF007AFF).withOpacity(0.2),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
                       Symbols.movie,
                       size: 64,
-                      color: Color(0xFF007AFF), // primary
+                      color: Color(0xFF007AFF),
                     ),
                   ),
                 ),
@@ -73,7 +73,7 @@ class CreateQuizScreen extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 16,
-                      color: const Color(0xFF6C6C70), // text-light-secondary
+                      color: const Color(0xFF6C6C70),
                     ),
                   ),
                 ),
@@ -96,7 +96,13 @@ class CreateQuizScreen extends StatelessWidget {
                 // Nút chính
                 ElevatedButton(
                   onPressed: () {
-                    // TODO: Chức năng tải video lên
+                    // <<< SỬA ĐỔI: Điều hướng đến màn hình quiz
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const QuizChallengeScreen(),
+                      ),
+                    );
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF007AFF),
@@ -108,7 +114,9 @@ class CreateQuizScreen extends StatelessWidget {
                   ),
                   child: Text(
                     'Tải Video Lên',
-                    style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold),
+                    style: GoogleFonts.plusJakartaSans(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -134,7 +142,9 @@ class CreateQuizScreen extends StatelessWidget {
                   ),
                   child: Text(
                     'Chọn từ Thư viện',
-                    style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold),
+                    style: GoogleFonts.plusJakartaSans(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ],

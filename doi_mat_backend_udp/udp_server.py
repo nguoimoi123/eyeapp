@@ -2,10 +2,18 @@ import socket
 from datetime import datetime
 import io
 import torch
+import json  # Thêm import này
 from torchvision import transforms
 from torchvision.models.detection import fasterrcnn_mobilenet_v3_large_fpn
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from PIL import Image
+
+# Danh sách các lớp trong bộ VOC
+VOC_CLASSES = [
+    '__background__', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 
+    'bus', 'car', 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse',
+    'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor'
+]
 
 # ================================================================
 # 🔹 1️⃣ HÀM KHỞI TẠO MODEL (load trọng số)
@@ -75,8 +83,6 @@ def start_udp_server(model, host="0.0.0.0", port=9999):
             timestamp = datetime.now().strftime("%H:%M:%S")
 
             print(f"[{timestamp}] 📩 Nhận {len(data)} bytes từ {addr}")
-
-            # --- In thử 20 bytes đầu để kiểm tra dữ liệu ---
             print("📦 Data mẫu:", data[:20])
 
             # --- Thực hiện dự đoán ---
@@ -90,6 +96,32 @@ def start_udp_server(model, host="0.0.0.0", port=9999):
                         f"Score={det['score']:.2f}, "
                         f"Box={det['box']}"
                     )
+                
+                # === THÊM ĐOẠN CODE GỬI KẾT QUẢ VỀ CHO CLIENT ===
+                # Chuyển đổi label từ số sang chuỗi
+                response_detections = []
+                for det in detections:
+                    label_index = det['label']
+                    label_name = VOC_CLASSES[label_index] if label_index < len(VOC_CLASSES) else "unknown"
+                    
+                    response_detections.append({
+                        "label": label_name,
+                        "score": det['score'],
+                        "box": det['box']
+                    })
+                
+                # Tạo response JSON
+                response = {
+                    "object_count": len(detections),
+                    "detections": response_detections
+                }
+                
+                # Chuyển đổi thành JSON và gửi về cho client
+                response_json = json.dumps(response).encode('utf-8')
+                server.sendto(response_json, addr)
+                print(f"📤 Đã gửi kết quả về cho {addr}")
+                # === KẾT THÚC ĐOẠN CODE THÊM ===
+                
             except Exception as e:
                 print(f"⚠️ Lỗi khi predict: {e}")
 

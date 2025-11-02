@@ -7,6 +7,7 @@ import 'package:image/image.dart' as img;
 import 'dart:convert';
 
 import '../services/api_udp_service.dart';
+import 'object_details_screen.dart'; // Thêm import cho màn hình chi tiết
 
 class FindObjectScreen extends StatefulWidget {
   const FindObjectScreen({super.key});
@@ -33,6 +34,9 @@ class _FindObjectScreenState extends State<FindObjectScreen>
   double _lastScore = 0;
   List<Map<String, dynamic>> _detections = [];
   DateTime _lastUpdateTime = DateTime.now();
+
+  // 🔹 Thêm biến để theo dõi đối tượng được chọn
+  int? _selectedObjectIndex;
 
   // 🔹 Màu sắc cho các class khác nhau
   final Map<String, Color> _classColors = {
@@ -316,82 +320,19 @@ class _FindObjectScreenState extends State<FindObjectScreen>
               previewSize: previewSize,
               screenSize: screenSize,
               getColorForClass: _getColorForClass,
+              selectedIndex: _selectedObjectIndex, // Thêm index được chọn
             ),
           ),
-
-          // Thông tin object
-          _buildInfoPanel(),
 
           // Nút quay lại
           _buildBackButton(context),
 
           // Danh sách objects phát hiện
           _buildObjectList(),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildInfoPanel() {
-    return Positioned(
-      top: 50,
-      left: 20,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.7),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white30),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "📊 Real-time Detection",
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "📦 Frame: $_frameCount",
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
-            ),
-            Text(
-              "🎯 Objects: $_objectCount",
-              style: const TextStyle(
-                color: Colors.lightGreenAccent,
-                fontSize: 12,
-              ),
-            ),
-            Text(
-              "⚡ FPS: ${_currentFPS.toStringAsFixed(1)}",
-              style: const TextStyle(color: Colors.cyanAccent, fontSize: 12),
-            ),
-            if (_objectCount > 0) ...[
-              Text(
-                "🏷️ Top: $_lastLabel",
-                style: const TextStyle(
-                  color: Colors.orangeAccent,
-                  fontSize: 12,
-                ),
-              ),
-              Text(
-                "📈 Score: ${(_lastScore * 100).toStringAsFixed(0)}%",
-                style: const TextStyle(
-                  color: Colors.orangeAccent,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-            Text(
-              "⏱️ ${_lastUpdateTime.difference(DateTime.now()).inSeconds.abs()}s ago",
-              style: const TextStyle(color: Colors.grey, fontSize: 10),
-            ),
-          ],
-        ),
+          // Nút tìm hiểu chi tiết (chỉ hiển thị khi có đối tượng được chọn)
+          if (_selectedObjectIndex != null) _buildDetailButton(),
+        ],
       ),
     );
   }
@@ -413,7 +354,7 @@ class _FindObjectScreenState extends State<FindObjectScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "📋 Detected Objects (${_detections.length})",
+              "Phát hiện vật thể (${_detections.length})",
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 14,
@@ -430,37 +371,117 @@ class _FindObjectScreenState extends State<FindObjectScreen>
                   final label = det["label"] ?? "Unknown";
                   final score = (det["score"] ?? 0.0).toDouble();
                   final color = _getColorForClass(label);
+                  final isSelected = _selectedObjectIndex == index;
 
-                  return Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: color),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          label,
-                          style: TextStyle(
-                            color: color,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedObjectIndex = isSelected ? null : index;
+                      });
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? color.withOpacity(0.5)
+                            : color.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isSelected ? color : color.withOpacity(0.5),
+                          width: isSelected ? 2.5 : 1.0,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            label,
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 12,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
                           ),
-                        ),
-                        Text(
-                          "${(score * 100).toStringAsFixed(0)}%",
-                          style: TextStyle(color: color, fontSize: 10),
-                        ),
-                      ],
+                          Text(
+                            "${(score * 100).toStringAsFixed(0)}%",
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 10,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 },
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailButton() {
+    return Positioned(
+      bottom: 150,
+      left: 20,
+      right: 20,
+      child: Container(
+        height: 50,
+        decoration: BoxDecoration(
+          color: Colors.blue,
+          borderRadius: BorderRadius.circular(25),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              spreadRadius: 2,
+              blurRadius: 5,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: MaterialButton(
+          onPressed: () {
+            if (_selectedObjectIndex != null) {
+              final selectedObject = _detections[_selectedObjectIndex!];
+              final label = selectedObject["label"] ?? "Unknown";
+
+              // Chuyển đến màn hình chi tiết
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ObjectDetailsScreen(label: label),
+                ),
+              ).then((_) {
+                // Reset selection khi quay lại
+                setState(() {
+                  _selectedObjectIndex = null;
+                });
+              });
+            }
+          },
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.info_outline, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                "Tìm hiểu chi tiết",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -491,12 +512,14 @@ class DetectionPainter extends CustomPainter {
   final Size previewSize;
   final Size screenSize;
   final Color Function(String) getColorForClass;
+  final int? selectedIndex; // Thêm index được chọn
 
   DetectionPainter({
     required this.detections,
     required this.previewSize,
     required this.screenSize,
     required this.getColorForClass,
+    this.selectedIndex, // Thêm index được chọn
   });
 
   @override
@@ -530,13 +553,15 @@ class DetectionPainter extends CustomPainter {
     print("📱 [PAINTER] Screen size: ${screenSize.width}x${screenSize.height}");
     print("📐 [PAINTER] Scale: X=$scaleX, Y=$scaleY");
 
-    for (var det in detections) {
+    for (int i = 0; i < detections.length; i++) {
+      final det = detections[i];
       final bbox = det["box"];
       if (bbox == null || bbox.length < 4) continue;
 
       final label = det["label"]?.toString() ?? "Unknown";
       final score = (det["score"] ?? 0.0).toDouble();
       final color = getColorForClass(label);
+      final isSelected = selectedIndex == i; // Kiểm tra có được chọn không
 
       // Chuyển đổi tọa độ box từ server sang tọa độ màn hình
       final x1 = bbox[0] * scaleX + offsetX;
@@ -558,19 +583,23 @@ class DetectionPainter extends CustomPainter {
 
       final paint = Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 3.0
+        ..strokeWidth = isSelected
+            ? 5.0
+            : 3.0 // Đậm hơn nếu được chọn
         ..color = color;
 
       final fillPaint = Paint()
         ..style = PaintingStyle.fill
-        ..color = color.withOpacity(0.15);
+        ..color = isSelected
+            ? color.withOpacity(0.3) // Đậm hơn nếu được chọn
+            : color.withOpacity(0.15);
 
       // Vẽ box filled + border
       canvas.drawRect(rect, fillPaint);
       canvas.drawRect(rect, paint);
 
       // Vẽ góc box
-      _drawBoxCorners(canvas, rect, color);
+      _drawBoxCorners(canvas, rect, color, isSelected);
 
       // Vẽ label background
       final labelText = "$label ${(score * 100).toStringAsFixed(0)}%";
@@ -595,12 +624,12 @@ class DetectionPainter extends CustomPainter {
     }
   }
 
-  void _drawBoxCorners(Canvas canvas, Rect rect, Color color) {
+  void _drawBoxCorners(Canvas canvas, Rect rect, Color color, bool isSelected) {
     final cornerPaint = Paint()
       ..style = PaintingStyle.fill
       ..color = color;
 
-    final cornerLength = 12.0;
+    final cornerLength = isSelected ? 15.0 : 12.0; // Dài hơn nếu được chọn
 
     // Top-left corner
     canvas.drawRect(
@@ -655,6 +684,7 @@ class DetectionPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant DetectionPainter oldDelegate) {
-    return oldDelegate.detections != detections;
+    return oldDelegate.detections != detections ||
+        oldDelegate.selectedIndex != selectedIndex;
   }
 }

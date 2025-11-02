@@ -13,3 +13,11 @@ class PredictionResponse(BaseModel):
 class DescriptionResponse(BaseModel):
     description: str
     objects: List[str]
+
+class QuizQuestion(BaseModel):
+    question: str
+    options: List[str]
+    correct_answer_index: int
+
+class QuizResponse(BaseModel):
+    questions: List[QuizQuestion]

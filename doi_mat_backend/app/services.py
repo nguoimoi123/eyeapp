@@ -20,6 +20,7 @@ class ObjectDetectionService:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = self._load_model(model_path)
         self.transform = ToTensor()
+        self.VOC_CLASSES = VOC_CLASSES
 
     def _load_model(self, model_path: str):
         """Tải model từ file .pth"""

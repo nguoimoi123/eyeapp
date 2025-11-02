@@ -2,20 +2,29 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request
 from fastapi.responses import JSONResponse
 from app.services import ObjectDetectionService
-from app.models import PredictionResponse, DescriptionResponse
+from app.models import PredictionResponse, DescriptionResponse, QuizResponse # <-- Import QuizResponse
+from app.video_processor import process_video_for_quiz # <-- Import hàm xử lý
 import mimetypes
+import os
+import uuid
+import shutil
 
 # Khởi tạo FastAPI app
 app = FastAPI(
     title="Đôi Mắt Thông Minh API",
-    description="API for detecting and describing objects in images.",
+    description="API for detecting and describing objects in images and videos.", # <-- Cập nhật mô tả
     version="1.0.0"
 )
+
 
 # Khởi tạo service (tải model chỉ một lần)
 # Đảm bảo đường dẫn đến file model là chính xác
 MODEL_PATH = "fasterrcnn_mobilenet_weights.pth" 
 detection_service = ObjectDetectionService(model_path=MODEL_PATH)
+
+# Tạo thư mục tạm cho video nếu chưa có
+TEMP_VIDEO_DIR = "temp_videos"
+os.makedirs(TEMP_VIDEO_DIR, exist_ok=True)
 
 def generate_description(labels: list[str]) -> str:
     """Hàm tạo câu mô tả đơn giản"""
@@ -107,3 +116,55 @@ async def predict_image(request: Request, file: UploadFile = File(...)):
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the Đôi Mắt Thông Minh API!"}
+
+def is_video_file(file: UploadFile) -> bool:
+    """Kiểm tra xem một file có phải là video không."""
+    if file.content_type and file.content_type.startswith("video/"):
+        return True
+    if file.filename:
+        guess = mimetypes.guess_type(file.filename)
+        if guess and guess[0] and guess[0].startswith("video/"):
+            return True
+    return False
+
+@app.post("/analyze_video", response_model=QuizResponse)
+async def analyze_video(file: UploadFile = File(...)):
+    """
+    Nhận một video, phân tích và tạo ra các câu hỏi đố.
+    """
+    print(f"Request received for /analyze_video")
+    print(f"File received: filename='{file.filename}', content_type='{file.content_type}'")
+
+    if not is_video_file(file):
+        print("Error: File is not a video or has an unsupported type.")
+        raise HTTPException(status_code=400, detail="File provided is not a video or has an unsupported type.")
+
+    # Tạo một tên file duy nhất để tránh xung đột
+    temp_file_id = str(uuid.uuid4())
+    temp_filename = f"{temp_file_id}_{file.filename}"
+    temp_filepath = os.path.join(TEMP_VIDEO_DIR, temp_filename)
+
+    try:
+        # Lưu file video tạm thời
+        with open(temp_filepath, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        print(f"Video saved temporarily at: {temp_filepath}")
+
+        # Gọi hàm xử lý video, truyền vào model và class names đã có
+        quiz_questions = process_video_for_quiz(
+            video_path=temp_filepath, 
+            model=detection_service.model, # <-- Truyền model instance
+            voc_classes=detection_service.VOC_CLASSES # <-- Truyền class names
+        )
+        
+        return QuizResponse(questions=quiz_questions)
+
+    except Exception as e:
+        print(f"An unexpected error occurred during video processing: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Dọn dẹp file tạm sau khi xử lý xong
+        if os.path.exists(temp_filepath):
+            os.remove(temp_filepath)
+            print(f"Temporary video file removed: {temp_filepath}")
