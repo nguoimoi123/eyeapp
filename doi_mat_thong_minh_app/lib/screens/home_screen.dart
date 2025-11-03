@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
+import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
 import 'camera_screen.dart'; // Chúng ta sẽ tạo file này sau
 import 'create_quiz_screen.dart'; // Và cả file này
 import 'find_object_screen.dart';
@@ -71,16 +73,26 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    final isDarkMode = themeProvider.isDarkMode;
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA), // background-light
+      backgroundColor: isDarkMode
+          ? const Color(0xFF121212)
+          : const Color(0xFFF8F9FA),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF8F9FA),
+        backgroundColor: isDarkMode
+            ? const Color(0xFF121212)
+            : const Color(0xFFF8F9FA),
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Symbols.settings, color: Colors.black54),
+            icon: Icon(
+              isDarkMode ? Symbols.light_mode : Symbols.dark_mode,
+              color: isDarkMode ? Colors.white70 : Colors.black54,
+            ),
             onPressed: () {
-              // TODO: Mở màn hình cài đặt
+              // Chuyển đổi giao diện Dark/Light
+              themeProvider.toggleTheme();
             },
           ),
         ],

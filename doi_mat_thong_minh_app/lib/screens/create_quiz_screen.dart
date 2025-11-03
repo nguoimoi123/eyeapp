@@ -28,129 +28,133 @@ class CreateQuizScreen extends StatelessWidget {
         ),
         centerTitle: true,
       ),
-      body: Column(
-        children: [
-          // Phần nội dung chính
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Icon lớn nhiều lớp
-                Container(
-                  width: 160,
-                  height: 160,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFEBF5FF),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Container(
-                    margin: const EdgeInsets.all(28),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF007AFF).withOpacity(0.2),
+      body: SafeArea(
+        // Thêm SafeArea để ngăn ngừa lỗi tràn nội dung
+        child: Column(
+          children: [
+            // Phần nội dung chính
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Icon lớn nhiều lớp - Đã sửa lỗi tràn nội dung
+                  Container(
+                    width: 160,
+                    height: 160,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFEBF5FF),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
-                      Symbols.movie,
-                      size: 64,
-                      color: Color(0xFF007AFF),
+                    child: Container(
+                      margin: const EdgeInsets.all(28),
+                      decoration: BoxDecoration(
+                        // Sửa cảnh báo lỗi thời bằng cách dùng withValues thay cho withOpacity
+                        color: const Color(0xFF007AFF).withValues(alpha: 0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Symbols.movie,
+                        size: 64,
+                        color: Color(0xFF007AFF),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 32),
-                Text(
-                  'Bắt đầu trò chơi!',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: const Color(0xFF0D0D0D),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32.0),
-                  child: Text(
-                    'Tải lên một video ngắn hoặc chọn video có sẵn để Đôi Mắt Thông Minh tạo câu đố cho bạn nhé!',
-                    textAlign: TextAlign.center,
+                  const SizedBox(height: 32),
+                  Text(
+                    'Bắt đầu trò chơi!',
                     style: GoogleFonts.plusJakartaSans(
-                      fontSize: 16,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF0D0D0D),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                    child: Text(
+                      'Tải lên một video ngắn hoặc chọn video có sẵn để Đôi Mắt Thông Minh tạo câu đố cho bạn nhé!',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16,
+                        color: const Color(0xFF6C6C70),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Phần nút bấm ở dưới
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  Text(
+                    'Gợi ý: Video nên dưới 20 giây',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 14,
                       color: const Color(0xFF6C6C70),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          // Phần nút bấm ở dưới
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
-                Text(
-                  'Gợi ý: Video nên dưới 60 giây',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
-                    color: const Color(0xFF6C6C70),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // Nút chính
-                ElevatedButton(
-                  onPressed: () {
-                    // <<< SỬA ĐỔI: Điều hướng đến màn hình quiz
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const QuizChallengeScreen(),
+                  const SizedBox(height: 12),
+                  // Nút chính
+                  ElevatedButton(
+                    onPressed: () {
+                      // <<< SỬA ĐỔI: Điều hướng đến màn hình quiz
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const QuizChallengeScreen(),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF007AFF),
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF007AFF),
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(double.infinity, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ),
-                  child: Text(
-                    'Tải Video Lên',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // Nút phụ
-                OutlinedButton(
-                  onPressed: () {
-                    // Điều hướng đến màn hình Thử thách
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const QuizChallengeScreen(),
+                    child: Text(
+                      'Tải Video Lên',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.bold,
                       ),
-                    );
-                  },
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: const Color(0xFFEBF5FF),
-                    foregroundColor: const Color(0xFF007AFF),
-                    minimumSize: const Size(double.infinity, 48),
-                    side: const BorderSide(color: Color(0xFFEBF5FF)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: Text(
-                    'Chọn từ Thư viện',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontWeight: FontWeight.bold,
+                  const SizedBox(height: 12),
+                  // Nút phụ
+                  OutlinedButton(
+                    onPressed: () {
+                      // Điều hướng đến màn hình Thử thách
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const QuizChallengeScreen(),
+                        ),
+                      );
+                    },
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: const Color(0xFFEBF5FF),
+                      foregroundColor: const Color(0xFF007AFF),
+                      minimumSize: const Size(double.infinity, 48),
+                      side: const BorderSide(color: Color(0xFFEBF5FF)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      'Chọn từ Thư viện',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

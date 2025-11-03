@@ -6,7 +6,7 @@ import 'dart:typed_data';
 /// Dịch vụ API để giao tiếp với máy chủ nhận dạng vật thể qua giao thức UDP.
 class ApiUdpService {
   // --- CẤU HÌNH SERVER ---
-  static const String _serverHost = "192.168.0.155"; // THAY IP NÀY
+  static const String _serverHost = "192.168.90.105"; // THAY IP NÀY
   static const int _serverPort = 9999;
 
   // Giới hạn kích thước gói UDP để tránh lỗi "Message too long"

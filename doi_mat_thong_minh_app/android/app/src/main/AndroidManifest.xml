@@ -6,7 +6,7 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     
     <application
-        android:label="doi_mat_thong_minh_app"
+        android:label="EWAC"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
