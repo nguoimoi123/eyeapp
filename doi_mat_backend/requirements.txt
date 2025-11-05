@@ -7,3 +7,8 @@ fastapi
 uvicorn[standard]
 python-multipart
 opencv-python
+flask
+fastapi
+uvicorn
+opencv-python
+numpy
